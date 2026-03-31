@@ -179,7 +179,7 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
       <div class="file-list" v-if="files.length > 0">
         <div v-for="item in files" :key="item.id" class="file-item" :class="item.status">
           <div class="file-info">
-            <span class="file-name">{{ item.name }}</span>
+            <span class="file-name">{{ item.status === 'done' && item.result ? item.result.filename : item.name }}</span>
             <span class="file-size">{{ item.size }}</span>
             <span v-if="item.isNcm" class="ncm-badge">NCM</span>
           </div>
