@@ -59,6 +59,12 @@ const t = computed(() => ({
   trimEnd: lang.value === 'zh' ? '结束(秒)' : 'End(s)',
   volume: lang.value === 'zh' ? '音量' : 'Volume',
   mergeTip: lang.value === 'zh' ? '将所有文件合并为一个' : 'Merge all files into one',
+  history: lang.value === 'zh' ? '转换历史' : 'History',
+  clearHistory: lang.value === 'zh' ? '清除历史' : 'Clear history',
+  noHistory: lang.value === 'zh' ? '暂无历史记录' : 'No history yet',
+  darkMode: lang.value === 'zh' ? '深色' : 'Dark',
+  lightMode: lang.value === 'zh' ? '浅色' : 'Light',
+  fileInfo: lang.value === 'zh' ? '文件信息' : 'File info',
 }))
 
 const files = ref<FileItem[]>([])
@@ -69,6 +75,26 @@ const converting = ref(false)
 const dragOver = ref(false)
 const targetBitrate = ref<string>('auto')
 const targetSampleRate = ref<string>('auto')
+const darkMode = ref(false)
+
+interface HistoryItem {
+  filename: string
+  format: string
+  time: string
+}
+const history = ref<HistoryItem[]>(JSON.parse(localStorage.getItem('sonakin-history') || '[]'))
+
+function addHistory(filename: string, format: string) {
+  const item = { filename, format, time: new Date().toLocaleString() }
+  history.value.unshift(item)
+  if (history.value.length > 20) history.value = history.value.slice(0, 20)
+  localStorage.setItem('sonakin-history', JSON.stringify(history.value))
+}
+
+function clearHistory() {
+  history.value = []
+  localStorage.removeItem('sonakin-history')
+}
 
 const ACCEPT = '.mp3,.wav,.flac,.ogg,.aac,.m4a,.wma,.ncm,.mp4,.mkv,.avi,.mov,.webm,.flv'
 const VIDEO_EXTS = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv']
@@ -214,6 +240,7 @@ async function startConvert() {
       }
       item.status = 'done'
       item.progress = t.value.done
+      if (item.result) addHistory(item.result.filename, targetFormat.value)
     } catch (e: any) {
       item.status = 'error'
       item.progress = e.message || t.value.failed
@@ -268,6 +295,7 @@ async function startMerge() {
     eligible[0].result = result
     eligible[0].status = 'done'
     eligible[0].progress = t.value.done
+    addHistory(result.filename, targetFormat.value)
     eligible.slice(1).forEach(f => { f.status = 'done'; f.progress = t.value.done })
     message.success(t.value.mergeDone)
   } catch (e: any) {
@@ -280,7 +308,7 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
 </script>
 
 <template>
-  <div class="container">
+  <div class="container" :class="{ dark: darkMode }">
     <header>
       <div class="header-top">
         <div class="logo">
@@ -288,6 +316,7 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
           <span class="logo-text">Son<span class="logo-highlight">akin</span></span>
         </div>
         <a-button size="small" @click="lang = lang === 'zh' ? 'en' : 'zh'">{{ lang === 'zh' ? 'EN' : '中文' }}</a-button>
+        <a-button size="small" @click="darkMode = !darkMode" style="margin-left:8px">{{ darkMode ? t.lightMode : t.darkMode }}</a-button>
       </div>
       <p class="subtitle">{{ t.subtitle }}</p>
     </header>
@@ -425,6 +454,20 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
         <a-button size="large" @click="clearAll" :disabled="converting">{{ t.clearAll }}</a-button>
       </div>
     </main>
+
+    <!-- 历史记录 -->
+    <section class="history-section" v-if="history.length > 0">
+      <div class="history-header">
+        <span class="label">🗂️ {{ t.history }}</span>
+        <a-button size="small" type="text" danger @click="clearHistory">{{ t.clearHistory }}</a-button>
+      </div>
+      <div class="history-list">
+        <div v-for="(item, i) in history" :key="i" class="history-item">
+          <span class="history-name">{{ item.filename }}</span>
+          <span class="history-meta">{{ item.format.toUpperCase() }} · {{ item.time }}</span>
+        </div>
+      </div>
+    </section>
 
     <footer>
       <p>Sonakin · {{ t.footer }} <a href="https://github.com/akinnya/sonakin" target="_blank">GitHub</a></p>
@@ -671,4 +714,69 @@ footer a {
 footer a:hover {
   text-decoration: underline;
 }
+
+/* 历史记录 */
+.history-section {
+  margin-top: 32px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 4px rgba(37,99,235,0.08);
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f4ff;
+}
+
+.history-name {
+  color: #1e3a5f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.history-meta {
+  color: #94a3b8;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* 深色模式 */
+.dark {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.dark header .subtitle { color: #94a3b8; }
+.dark .logo-text { color: #e2e8f0; }
+.dark .upload-zone { background: rgba(37,99,235,0.08); border-color: #334155; }
+.dark .upload-zone:hover { background: rgba(37,99,235,0.15); border-color: #2563eb; }
+.dark .upload-text { color: #cbd5e1; }
+.dark .settings { background: #1e293b; }
+.dark .label { color: #94a3b8; }
+.dark .file-item { background: #1e293b; }
+.dark .file-name { color: #e2e8f0; }
+.dark .history-section { background: #1e293b; }
+.dark .history-name { color: #e2e8f0; }
+.dark .history-item { border-bottom-color: #334155; }
+.dark footer { border-top-color: #334155; color: #64748b; }
 </style>
