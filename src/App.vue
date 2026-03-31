@@ -16,6 +16,25 @@ interface FileItem {
   isNcm: boolean
 }
 
+const lang = ref<'zh' | 'en'>('zh')
+
+const t = computed(() => ({
+  subtitle: lang.value === 'zh' ? '浏览器端音频格式转换 · 文件不离开你的设备' : 'Browser-based audio converter · Files never leave your device',
+  uploadText: lang.value === 'zh' ? '拖拽文件到这里，或点击选择文件' : 'Drop files here, or click to select',
+  uploadHint: lang.value === 'zh' ? '支持 MP3 / WAV / FLAC / OGG / AAC / NCM' : 'Supports MP3 / WAV / FLAC / OGG / AAC / NCM',
+  targetFormat: lang.value === 'zh' ? '目标格式：' : 'Target format:',
+  ncmTip: lang.value === 'zh' ? 'NCM 文件将自动解密为原始格式' : 'NCM files will be decrypted to their original format',
+  convertBtn: lang.value === 'zh' ? '开始转换' : 'Convert',
+  loadingEngine: lang.value === 'zh' ? '加载引擎中...' : 'Loading engine...',
+  converting: lang.value === 'zh' ? '转换中...' : 'Converting...',
+  downloadAll: lang.value === 'zh' ? '全部下载' : 'Download all',
+  clearAll: lang.value === 'zh' ? '清空列表' : 'Clear all',
+  done: lang.value === 'zh' ? '完成' : 'Done',
+  failed: lang.value === 'zh' ? '转换失败' : 'Failed',
+  convertDone: lang.value === 'zh' ? '转换完成' : 'Conversion complete',
+  footer: lang.value === 'zh' ? '纯前端音频转换 · 开源于' : 'Browser-based audio converter · Open source on',
+}))
+
 const files = ref<FileItem[]>([])
 const targetFormat = ref<AudioFormat>('mp3')
 const ffmpegLoaded = ref(false)
@@ -100,14 +119,14 @@ async function startConvert() {
         item.result = result
       }
       item.status = 'done'
-      item.progress = '完成'
+      item.progress = t.value.done
     } catch (e: any) {
       item.status = 'error'
-      item.progress = e.message || '转换失败'
+      item.progress = e.message || t.value.failed
     }
   }
   converting.value = false
-  message.success('转换完成')
+  message.success(t.value.convertDone)
 }
 
 function downloadFile(item: FileItem) {
@@ -130,11 +149,14 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
 <template>
   <div class="container">
     <header>
-      <div class="logo">
-        <SoundOutlined class="logo-icon" />
-        <span class="logo-text">Son<span class="logo-highlight">akin</span></span>
+      <div class="header-top">
+        <div class="logo">
+          <SoundOutlined class="logo-icon" />
+          <span class="logo-text">Son<span class="logo-highlight">akin</span></span>
+        </div>
+        <a-button size="small" @click="lang = lang === 'zh' ? 'en' : 'zh'">{{ lang === 'zh' ? 'EN' : '中文' }}</a-button>
       </div>
-      <p class="subtitle">浏览器端音频格式转换 · 文件不离开你的设备</p>
+      <p class="subtitle">{{ t.subtitle }}</p>
     </header>
 
     <main>
@@ -148,8 +170,8 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
         @click="($refs.fileInput as HTMLInputElement).click()"
       >
         <CloudUploadOutlined class="upload-icon" />
-        <p class="upload-text">拖拽文件到这里，或点击选择文件</p>
-        <p class="upload-hint">支持 MP3 / WAV / FLAC / OGG / AAC / NCM</p>
+        <p class="upload-text">{{ t.uploadText }}</p>
+        <p class="upload-hint">{{ t.uploadHint }}</p>
         <input
           ref="fileInput"
           type="file"
@@ -163,7 +185,7 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
       <!-- 转换设置 -->
       <div class="settings" v-if="files.length > 0">
         <div class="format-select">
-          <span class="label"><SwapOutlined /> 目标格式：</span>
+          <span class="label"><SwapOutlined /> {{ t.targetFormat }}</span>
           <a-radio-group v-model:value="targetFormat" button-style="solid" size="large">
             <a-radio-button v-for="f in FORMATS" :key="f.value" :value="f.value">
               {{ f.label }}
@@ -171,7 +193,7 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
           </a-radio-group>
         </div>
         <p class="ncm-tip" v-if="files.some((f) => f.isNcm)">
-          <LockOutlined /> NCM 文件将自动解密为原始格式
+          <LockOutlined /> {{ t.ncmTip }}
         </p>
       </div>
 
@@ -214,17 +236,17 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
           :loading="converting || ffmpegLoading"
           @click="startConvert"
         >
-          {{ ffmpegLoading ? '加载引擎中...' : converting ? '转换中...' : '开始转换' }}
+          {{ ffmpegLoading ? t.loadingEngine : converting ? t.converting : t.convertBtn }}
         </a-button>
         <a-button size="large" @click="downloadAll" :disabled="doneCount === 0">
-          全部下载 ({{ doneCount }})
+          {{ t.downloadAll }} ({{ doneCount }})
         </a-button>
-        <a-button size="large" @click="clearAll" :disabled="converting">清空列表</a-button>
+        <a-button size="large" @click="clearAll" :disabled="converting">{{ t.clearAll }}</a-button>
       </div>
     </main>
 
     <footer>
-      <p>Sonakin · 纯前端音频转换 · 开源于 <a href="https://github.com/akinnya/sonakin" target="_blank">GitHub</a></p>
+      <p>Sonakin · {{ t.footer }} <a href="https://github.com/akinnya/sonakin" target="_blank">GitHub</a></p>
     </footer>
   </div>
 </template>
@@ -242,6 +264,19 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
 header {
   text-align: center;
   margin-bottom: 40px;
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.header-top .ant-btn {
+  position: absolute;
+  right: 0;
 }
 
 .logo {
