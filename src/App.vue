@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { message } from 'ant-design-vue'
-import { SoundOutlined, CloudUploadOutlined, SwapOutlined, DownloadOutlined, DeleteOutlined, LockOutlined } from '@ant-design/icons-vue'
+import { SoundOutlined, CloudUploadOutlined, SwapOutlined, DownloadOutlined, DeleteOutlined, LockOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons-vue'
 import { convertAudio, loadFFmpeg, FORMATS, type AudioFormat } from './utils/converter'
 import { decryptNcm } from './utils/ncm'
+
+interface FileInfo {
+  duration?: string
+  bitrate?: string
+  sampleRate?: string
+}
 
 interface FileItem {
   id: string
@@ -14,6 +20,10 @@ interface FileItem {
   progress: string
   result?: { blob: Blob; filename: string }
   isNcm: boolean
+  isVideo: boolean
+  previewUrl?: string
+  playing?: boolean
+  info?: FileInfo
 }
 
 const lang = ref<'zh' | 'en'>('zh')
@@ -21,9 +31,12 @@ const lang = ref<'zh' | 'en'>('zh')
 const t = computed(() => ({
   subtitle: lang.value === 'zh' ? '浏览器端音频格式转换 · 文件不离开你的设备' : 'Browser-based audio converter · Files never leave your device',
   uploadText: lang.value === 'zh' ? '拖拽文件到这里，或点击选择文件' : 'Drop files here, or click to select',
-  uploadHint: lang.value === 'zh' ? '支持 MP3 / WAV / FLAC / OGG / AAC / NCM' : 'Supports MP3 / WAV / FLAC / OGG / AAC / NCM',
+  uploadHint: lang.value === 'zh' ? '支持音频/视频 · MP3 / WAV / FLAC / OGG / AAC / MP4 / NCM 等' : 'Supports audio/video · MP3 / WAV / FLAC / OGG / AAC / MP4 / NCM etc.',
   targetFormat: lang.value === 'zh' ? '目标格式：' : 'Target format:',
+  bitrate: lang.value === 'zh' ? '比特率：' : 'Bitrate:',
+  sampleRate: lang.value === 'zh' ? '采样率：' : 'Sample rate:',
   ncmTip: lang.value === 'zh' ? 'NCM 文件将自动解密为原始格式' : 'NCM files will be decrypted to their original format',
+  videoTip: lang.value === 'zh' ? '视频文件将提取其中的音频' : 'Audio will be extracted from video files',
   convertBtn: lang.value === 'zh' ? '开始转换' : 'Convert',
   loadingEngine: lang.value === 'zh' ? '加载引擎中...' : 'Loading engine...',
   converting: lang.value === 'zh' ? '转换中...' : 'Converting...',
@@ -33,6 +46,8 @@ const t = computed(() => ({
   failed: lang.value === 'zh' ? '转换失败' : 'Failed',
   convertDone: lang.value === 'zh' ? '转换完成' : 'Conversion complete',
   footer: lang.value === 'zh' ? '纯前端音频转换 · 开源于' : 'Browser-based audio converter · Open source on',
+  autoLabel: lang.value === 'zh' ? '自动' : 'Auto',
+  download: lang.value === 'zh' ? '下载' : 'Download',
 }))
 
 const files = ref<FileItem[]>([])
@@ -41,8 +56,27 @@ const ffmpegLoaded = ref(false)
 const ffmpegLoading = ref(false)
 const converting = ref(false)
 const dragOver = ref(false)
+const targetBitrate = ref<string>('auto')
+const targetSampleRate = ref<string>('auto')
 
-const ACCEPT = '.mp3,.wav,.flac,.ogg,.aac,.m4a,.wma,.ncm'
+const ACCEPT = '.mp3,.wav,.flac,.ogg,.aac,.m4a,.wma,.ncm,.mp4,.mkv,.avi,.mov,.webm,.flv'
+const VIDEO_EXTS = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv']
+
+const BITRATES = [
+  { label: t.value.autoLabel, value: 'auto' },
+  { label: '64 kbps', value: '64k' },
+  { label: '128 kbps', value: '128k' },
+  { label: '192 kbps', value: '192k' },
+  { label: '256 kbps', value: '256k' },
+  { label: '320 kbps', value: '320k' },
+]
+
+const SAMPLE_RATES = [
+  { label: t.value.autoLabel, value: 'auto' },
+  { label: '22050 Hz', value: '22050' },
+  { label: '44100 Hz', value: '44100' },
+  { label: '48000 Hz', value: '48000' },
+]
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
@@ -50,8 +84,16 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+function getExt(filename: string) {
+  return filename.split('.').pop()?.toLowerCase() || ''
+}
+
 function addFiles(inputFiles: FileList | File[]) {
   for (const file of inputFiles) {
+    const ext = getExt(file.name)
+    const isVideo = VIDEO_EXTS.includes(ext)
+    const isNcm = ext === 'ncm'
+    const previewUrl = (isVideo || isNcm) ? undefined : URL.createObjectURL(file)
     files.value.push({
       id: Math.random().toString(36).slice(2),
       file,
@@ -59,7 +101,10 @@ function addFiles(inputFiles: FileList | File[]) {
       size: formatSize(file.size),
       status: 'waiting',
       progress: '',
-      isNcm: file.name.toLowerCase().endsWith('.ncm'),
+      isNcm,
+      isVideo,
+      previewUrl,
+      playing: false,
     })
   }
 }
@@ -76,18 +121,49 @@ function onFileInput(e: Event) {
 }
 
 function removeFile(id: string) {
+  const item = files.value.find(f => f.id === id)
+  if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl)
   files.value = files.value.filter((f) => f.id !== id)
 }
 
 function clearAll() {
+  files.value.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl) })
   files.value = []
+}
+
+const currentAudio = ref<HTMLAudioElement | null>(null)
+const currentPlayingId = ref<string | null>(null)
+
+function togglePlay(item: FileItem) {
+  if (!item.previewUrl && !item.result) return
+  const url = item.result ? URL.createObjectURL(item.result.blob) : item.previewUrl!
+  if (currentPlayingId.value === item.id && currentAudio.value) {
+    if (currentAudio.value.paused) {
+      currentAudio.value.play()
+      item.playing = true
+    } else {
+      currentAudio.value.pause()
+      item.playing = false
+    }
+    return
+  }
+  if (currentAudio.value) {
+    currentAudio.value.pause()
+    const prev = files.value.find(f => f.id === currentPlayingId.value)
+    if (prev) prev.playing = false
+  }
+  const audio = new Audio(url)
+  audio.onended = () => { item.playing = false }
+  audio.play()
+  item.playing = true
+  currentAudio.value = audio
+  currentPlayingId.value = item.id
 }
 
 async function startConvert() {
   if (files.value.length === 0) return
   converting.value = true
 
-  // 先加载 ffmpeg（非 ncm 文件需要）
   const hasNonNcm = files.value.some((f) => !f.isNcm)
   if (hasNonNcm && !ffmpegLoaded.value) {
     ffmpegLoading.value = true
@@ -106,16 +182,20 @@ async function startConvert() {
   for (const item of files.value) {
     if (item.status === 'done') continue
     item.status = 'converting'
-    item.progress = '转换中...'
+    item.progress = t.value.converting
     try {
       if (item.isNcm) {
-        item.progress = '解密中...'
+        item.progress = lang.value === 'zh' ? '解密中...' : 'Decrypting...'
         const result = await decryptNcm(item.file)
         item.result = { blob: result.blob, filename: result.filename }
       } else {
-        const result = await convertAudio(item.file, targetFormat.value, (msg) => {
-          item.progress = msg
-        })
+        const result = await convertAudio(
+          item.file,
+          targetFormat.value,
+          (msg) => { item.progress = msg },
+          targetBitrate.value === 'auto' ? undefined : targetBitrate.value,
+          targetSampleRate.value === 'auto' ? undefined : targetSampleRate.value,
+        )
         item.result = result
       }
       item.status = 'done'
@@ -192,8 +272,21 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
             </a-radio-button>
           </a-radio-group>
         </div>
+        <div class="format-select" style="margin-top:12px">
+          <span class="label">{{ t.bitrate }}</span>
+          <a-select v-model:value="targetBitrate" size="small" style="width:130px">
+            <a-select-option v-for="b in BITRATES" :key="b.value" :value="b.value">{{ b.label }}</a-select-option>
+          </a-select>
+          <span class="label" style="margin-left:16px">{{ t.sampleRate }}</span>
+          <a-select v-model:value="targetSampleRate" size="small" style="width:130px">
+            <a-select-option v-for="s in SAMPLE_RATES" :key="s.value" :value="s.value">{{ s.label }}</a-select-option>
+          </a-select>
+        </div>
         <p class="ncm-tip" v-if="files.some((f) => f.isNcm)">
           <LockOutlined /> {{ t.ncmTip }}
+        </p>
+        <p class="ncm-tip" v-if="files.some((f) => f.isVideo)" style="color:#2563eb">
+          {{ t.videoTip }}
         </p>
       </div>
 
@@ -204,8 +297,18 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
             <span class="file-name">{{ item.status === 'done' && item.result ? item.result.filename : item.name }}</span>
             <span class="file-size">{{ item.size }}</span>
             <span v-if="item.isNcm" class="ncm-badge">NCM</span>
+            <span v-if="item.isVideo" class="ncm-badge" style="background:#2563eb;color:#fff">VIDEO</span>
           </div>
           <div class="file-actions">
+            <a-button
+              v-if="!item.isNcm && !item.isVideo && item.previewUrl"
+              type="text"
+              size="small"
+              @click.stop="togglePlay(item)"
+            >
+              <PlayCircleOutlined v-if="!item.playing" />
+              <PauseCircleOutlined v-else />
+            </a-button>
             <span class="file-status" v-if="item.status !== 'waiting'">{{ item.progress }}</span>
             <a-button
               v-if="item.status === 'done'"
@@ -213,7 +316,7 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
               size="small"
               @click="downloadFile(item)"
             >
-              <DownloadOutlined /> 下载
+              <DownloadOutlined /> {{ t.download }}
             </a-button>
             <a-button
               type="text"

@@ -27,39 +27,62 @@ export const FORMATS: { label: string; value: AudioFormat }[] = [
   { label: 'AAC', value: 'aac' },
 ]
 
+export const BITRATES = [
+  { label: '自动 / Auto', value: '' },
+  { label: '128 kbps', value: '128k' },
+  { label: '192 kbps', value: '192k' },
+  { label: '256 kbps', value: '256k' },
+  { label: '320 kbps', value: '320k' },
+]
+
+export const SAMPLE_RATES = [
+  { label: '自动 / Auto', value: '' },
+  { label: '22050 Hz', value: '22050' },
+  { label: '44100 Hz', value: '44100' },
+  { label: '48000 Hz', value: '48000' },
+]
+
+export const VIDEO_EXTENSIONS = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', 'm4v', 'wmv', '3gp']
+
 export async function convertAudio(
   file: File,
   targetFormat: AudioFormat,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  bitrate?: string,
+  sampleRate?: string,
 ): Promise<{ blob: Blob; filename: string }> {
   const ff = await loadFFmpeg(onProgress)
-  const inputName = `input_${Date.now()}.${file.name.split('.').pop()}`
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'tmp'
+  const inputName = `input_${Date.now()}.${ext}`
   const baseName = file.name.replace(/\.[^.]+$/, '')
-  const outputName = `${baseName}.${targetFormat}`
 
   await ff.writeFile(inputName, await fetchFile(file))
+
+  const extraArgs: string[] = []
+  if (bitrate) extraArgs.push('-b:a', bitrate)
+  if (sampleRate) extraArgs.push('-ar', sampleRate)
 
   const codecArgs: string[] = []
   if (targetFormat === 'aac') {
     codecArgs.push('-c:a', 'aac')
-    // aac 需要 mp4 容器
-    const mp4Output = `${baseName}.m4a`
-    await ff.exec(['-i', inputName, ...codecArgs, mp4Output])
-    const data = await ff.readFile(mp4Output)
+    const m4aOutput = `out_${Date.now()}.m4a`
+    await ff.exec(['-i', inputName, ...codecArgs, ...extraArgs, m4aOutput])
+    const data = await ff.readFile(m4aOutput)
     await ff.deleteFile(inputName)
-    await ff.deleteFile(mp4Output)
+    await ff.deleteFile(m4aOutput)
     return {
       blob: new Blob([new Uint8Array(data as Uint8Array)], { type: 'audio/aac' }),
       filename: `${baseName}.aac`,
     }
   }
 
-  if (targetFormat === 'mp3') codecArgs.push('-c:a', 'libmp3lame', '-q:a', '2')
-  if (targetFormat === 'ogg') codecArgs.push('-c:a', 'libvorbis', '-q:a', '5')
+  if (targetFormat === 'mp3') codecArgs.push('-c:a', 'libmp3lame', ...(bitrate ? [] : ['-q:a', '2']))
+  if (targetFormat === 'ogg') codecArgs.push('-c:a', 'libvorbis', ...(bitrate ? [] : ['-q:a', '5']))
   if (targetFormat === 'flac') codecArgs.push('-c:a', 'flac')
   if (targetFormat === 'wav') codecArgs.push('-c:a', 'pcm_s16le')
 
-  await ff.exec(['-i', inputName, ...codecArgs, outputName])
+  const outputName = `out_${Date.now()}.${targetFormat}`
+  await ff.exec(['-i', inputName, ...codecArgs, ...extraArgs, outputName])
   const data = await ff.readFile(outputName)
   await ff.deleteFile(inputName)
   await ff.deleteFile(outputName)
@@ -74,6 +97,6 @@ export async function convertAudio(
 
   return {
     blob: new Blob([new Uint8Array(data as Uint8Array)], { type: mimeMap[targetFormat] }),
-    filename: outputName,
+    filename: `${baseName}.${targetFormat}`,
   }
 }
