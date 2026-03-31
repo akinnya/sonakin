@@ -254,22 +254,22 @@ header {
 
 .logo-icon {
   font-size: 36px;
-  color: #7c5cfc;
+  color: #2563eb;
 }
 
 .logo-text {
   font-size: 36px;
   font-weight: 700;
-  color: #fff;
+  color: #1e3a5f;
   letter-spacing: -0.5px;
 }
 
 .logo-highlight {
-  color: #7c5cfc;
+  color: #2563eb;
 }
 
 .subtitle {
-  color: #9ca3af;
+  color: #64748b;
   font-size: 15px;
 }
 
@@ -281,42 +281,43 @@ main {
 }
 
 .upload-zone {
-  border: 2px dashed #4a4560;
+  border: 2px dashed #93c5fd;
   border-radius: 16px;
   padding: 48px 24px;
   text-align: center;
   cursor: pointer;
   transition: all 0.3s;
-  background: rgba(124, 92, 252, 0.04);
+  background: rgba(37, 99, 235, 0.04);
 }
 
 .upload-zone:hover,
 .upload-zone.drag-over {
-  border-color: #7c5cfc;
-  background: rgba(124, 92, 252, 0.1);
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
 }
 
 .upload-icon {
   font-size: 48px;
-  color: #7c5cfc;
+  color: #2563eb;
   margin-bottom: 16px;
 }
 
 .upload-text {
   font-size: 16px;
-  color: #d1d5db;
+  color: #334155;
   margin-bottom: 8px;
 }
 
 .upload-hint {
   font-size: 13px;
-  color: #6b7280;
+  color: #64748b;
 }
 
 .settings {
-  background: rgba(255, 255, 255, 0.05);
+  background: #fff;
   border-radius: 12px;
   padding: 20px 24px;
+  box-shadow: 0 1px 4px rgba(37,99,235,0.08);
 }
 
 .format-select {
@@ -327,7 +328,7 @@ main {
 }
 
 .label {
-  color: #d1d5db;
+  color: #334155;
   font-size: 15px;
   white-space: nowrap;
 }
@@ -348,10 +349,11 @@ main {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(255, 255, 255, 0.05);
+  background: #fff;
   border-radius: 10px;
   padding: 12px 16px;
   transition: all 0.3s;
+  box-shadow: 0 1px 3px rgba(37,99,235,0.06);
 }
 
 .file-item.done {
@@ -363,7 +365,7 @@ main {
 }
 
 .file-item.converting {
-  border-left: 3px solid #7c5cfc;
+  border-left: 3px solid #2563eb;
 }
 
 .file-info {
@@ -375,7 +377,7 @@ main {
 }
 
 .file-name {
-  color: #e5e7eb;
+  color: #1e3a5f;
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -383,7 +385,7 @@ main {
 }
 
 .file-size {
-  color: #6b7280;
+  color: #64748b;
   font-size: 12px;
   flex-shrink: 0;
 }
@@ -406,7 +408,7 @@ main {
 }
 
 .file-status {
-  color: #9ca3af;
+  color: #64748b;
   font-size: 12px;
   max-width: 120px;
   overflow: hidden;
@@ -425,13 +427,13 @@ footer {
   text-align: center;
   margin-top: 48px;
   padding-top: 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  color: #6b7280;
+  border-top: 1px solid #bfdbfe;
+  color: #64748b;
   font-size: 13px;
 }
 
 footer a {
-  color: #7c5cfc;
+  color: #2563eb;
   text-decoration: none;
 }
 
