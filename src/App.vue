@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { SoundOutlined, CloudUploadOutlined, SwapOutlined, DownloadOutlined, DeleteOutlined, LockOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons-vue'
-import { convertAudio, loadFFmpeg, FORMATS, type AudioFormat } from './utils/converter'
+import { convertAudio, mergeAudio, loadFFmpeg, FORMATS, type AudioFormat } from './utils/converter'
 import { decryptNcm } from './utils/ncm'
 
 interface FileInfo {
@@ -24,6 +24,10 @@ interface FileItem {
   previewUrl?: string
   playing?: boolean
   info?: FileInfo
+  expanded?: boolean
+  trimStart?: string
+  trimEnd?: string
+  volume?: number
 }
 
 const lang = ref<'zh' | 'en'>('zh')
@@ -38,6 +42,7 @@ const t = computed(() => ({
   ncmTip: lang.value === 'zh' ? 'NCM 文件将自动解密为原始格式' : 'NCM files will be decrypted to their original format',
   videoTip: lang.value === 'zh' ? '视频文件将提取其中的音频' : 'Audio will be extracted from video files',
   convertBtn: lang.value === 'zh' ? '开始转换' : 'Convert',
+  mergeBtn: lang.value === 'zh' ? '合并转换' : 'Merge & Convert',
   loadingEngine: lang.value === 'zh' ? '加载引擎中...' : 'Loading engine...',
   converting: lang.value === 'zh' ? '转换中...' : 'Converting...',
   downloadAll: lang.value === 'zh' ? '全部下载' : 'Download all',
@@ -45,9 +50,15 @@ const t = computed(() => ({
   done: lang.value === 'zh' ? '完成' : 'Done',
   failed: lang.value === 'zh' ? '转换失败' : 'Failed',
   convertDone: lang.value === 'zh' ? '转换完成' : 'Conversion complete',
+  mergeDone: lang.value === 'zh' ? '合并完成' : 'Merge complete',
   footer: lang.value === 'zh' ? '纯前端音频转换 · 开源于' : 'Browser-based audio converter · Open source on',
   autoLabel: lang.value === 'zh' ? '自动' : 'Auto',
   download: lang.value === 'zh' ? '下载' : 'Download',
+  advanced: lang.value === 'zh' ? '高级' : 'Advanced',
+  trimStart: lang.value === 'zh' ? '开始(秒)' : 'Start(s)',
+  trimEnd: lang.value === 'zh' ? '结束(秒)' : 'End(s)',
+  volume: lang.value === 'zh' ? '音量' : 'Volume',
+  mergeTip: lang.value === 'zh' ? '将所有文件合并为一个' : 'Merge all files into one',
 }))
 
 const files = ref<FileItem[]>([])
@@ -195,6 +206,9 @@ async function startConvert() {
           (msg) => { item.progress = msg },
           targetBitrate.value === 'auto' ? undefined : targetBitrate.value,
           targetSampleRate.value === 'auto' ? undefined : targetSampleRate.value,
+          item.trimStart,
+          item.trimEnd,
+          item.volume,
         )
         item.result = result
       }
@@ -221,6 +235,45 @@ function downloadFile(item: FileItem) {
 
 function downloadAll() {
   files.value.filter((f) => f.status === 'done').forEach(downloadFile)
+}
+
+async function startMerge() {
+  const eligible = files.value.filter(f => !f.isNcm)
+  if (eligible.length < 2) {
+    message.warning(lang.value === 'zh' ? '请至少添加两个非NCM文件来合并' : 'Please add at least two non-NCM files to merge')
+    return
+  }
+  converting.value = true
+  if (!ffmpegLoaded.value) {
+    ffmpegLoading.value = true
+    try {
+      await loadFFmpeg()
+      ffmpegLoaded.value = true
+    } catch (e) {
+      message.error('FFmpeg 加载失败，请刷新重试')
+      converting.value = false
+      ffmpegLoading.value = false
+      return
+    }
+    ffmpegLoading.value = false
+  }
+  try {
+    const result = await mergeAudio(
+      eligible.map(f => f.file),
+      targetFormat.value,
+      (msg) => { eligible[0].progress = msg },
+      targetBitrate.value === 'auto' ? undefined : targetBitrate.value,
+      targetSampleRate.value === 'auto' ? undefined : targetSampleRate.value,
+    )
+    eligible[0].result = result
+    eligible[0].status = 'done'
+    eligible[0].progress = t.value.done
+    eligible.slice(1).forEach(f => { f.status = 'done'; f.progress = t.value.done })
+    message.success(t.value.mergeDone)
+  } catch (e: any) {
+    message.error(e.message || t.value.failed)
+  }
+  converting.value = false
 }
 
 const doneCount = computed(() => files.value.filter((f) => f.status === 'done').length)
@@ -293,40 +346,57 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
       <!-- 文件列表 -->
       <div class="file-list" v-if="files.length > 0">
         <div v-for="item in files" :key="item.id" class="file-item" :class="item.status">
-          <div class="file-info">
-            <span class="file-name">{{ item.status === 'done' && item.result ? item.result.filename : item.name }}</span>
-            <span class="file-size">{{ item.size }}</span>
-            <span v-if="item.isNcm" class="ncm-badge">NCM</span>
-            <span v-if="item.isVideo" class="ncm-badge" style="background:#2563eb;color:#fff">VIDEO</span>
+          <div class="file-row">
+            <div class="file-info">
+              <span class="file-name">{{ item.status === 'done' && item.result ? item.result.filename : item.name }}</span>
+              <span class="file-size">{{ item.size }}</span>
+              <span v-if="item.isNcm" class="ncm-badge">NCM</span>
+              <span v-if="item.isVideo" class="ncm-badge" style="background:#2563eb;color:#fff">VIDEO</span>
+            </div>
+            <div class="file-actions">
+              <a-button
+                v-if="!item.isNcm && !item.isVideo && item.previewUrl"
+                type="text"
+                size="small"
+                @click.stop="togglePlay(item)"
+              >
+                <PlayCircleOutlined v-if="!item.playing" />
+                <PauseCircleOutlined v-else />
+              </a-button>
+              <a-button
+                v-if="!item.isNcm"
+                type="text"
+                size="small"
+                @click.stop="item.expanded = !item.expanded"
+              >{{ t.advanced }}</a-button>
+              <span class="file-status" v-if="item.status !== 'waiting'">{{ item.progress }}</span>
+              <a-button
+                v-if="item.status === 'done'"
+                type="link"
+                size="small"
+                @click="downloadFile(item)"
+              >
+                <DownloadOutlined /> {{ t.download }}
+              </a-button>
+              <a-button
+                type="text"
+                size="small"
+                danger
+                @click="removeFile(item.id)"
+                :disabled="item.status === 'converting'"
+              >
+                <DeleteOutlined />
+              </a-button>
+            </div>
           </div>
-          <div class="file-actions">
-            <a-button
-              v-if="!item.isNcm && !item.isVideo && item.previewUrl"
-              type="text"
-              size="small"
-              @click.stop="togglePlay(item)"
-            >
-              <PlayCircleOutlined v-if="!item.playing" />
-              <PauseCircleOutlined v-else />
-            </a-button>
-            <span class="file-status" v-if="item.status !== 'waiting'">{{ item.progress }}</span>
-            <a-button
-              v-if="item.status === 'done'"
-              type="link"
-              size="small"
-              @click="downloadFile(item)"
-            >
-              <DownloadOutlined /> {{ t.download }}
-            </a-button>
-            <a-button
-              type="text"
-              size="small"
-              danger
-              @click="removeFile(item.id)"
-              :disabled="item.status === 'converting'"
-            >
-              <DeleteOutlined />
-            </a-button>
+          <div class="file-advanced" v-if="item.expanded">
+            <span class="adv-label">{{ t.trimStart }}</span>
+            <a-input-number v-model:value="item.trimStart" :min="0" :step="0.1" size="small" style="width:90px" placeholder="0" />
+            <span class="adv-label">{{ t.trimEnd }}</span>
+            <a-input-number v-model:value="item.trimEnd" :min="0" :step="0.1" size="small" style="width:90px" placeholder="end" />
+            <span class="adv-label">{{ t.volume }}</span>
+            <a-slider v-model:value="item.volume" :min="0" :max="300" :step="5" style="width:100px;display:inline-block" />
+            <span class="adv-val">{{ item.volume ?? 100 }}%</span>
           </div>
         </div>
       </div>
@@ -340,6 +410,14 @@ const doneCount = computed(() => files.value.filter((f) => f.status === 'done').
           @click="startConvert"
         >
           {{ ffmpegLoading ? t.loadingEngine : converting ? t.converting : t.convertBtn }}
+        </a-button>
+        <a-button
+          size="large"
+          :loading="converting"
+          @click="startMerge"
+          :disabled="files.filter(f => !f.isNcm).length < 2"
+        >
+          {{ t.mergeBtn }}
         </a-button>
         <a-button size="large" @click="downloadAll" :disabled="doneCount === 0">
           {{ t.downloadAll }} ({{ doneCount }})
@@ -484,9 +562,6 @@ main {
 }
 
 .file-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   background: #fff;
   border-radius: 10px;
   padding: 12px 16px;
@@ -504,6 +579,24 @@ main {
 
 .file-item.converting {
   border-left: 3px solid #2563eb;
+}
+
+.file-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.file-advanced {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e0eaff;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #334155;
 }
 
 .file-info {
